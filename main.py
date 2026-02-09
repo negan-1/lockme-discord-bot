@@ -76,6 +76,8 @@ def health():
 async def lockme_webhook(request: Request):
     if WEBHOOK_SECRET and request.query_params.get("s") != WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="forbidden")
+        discord_post("✅ Webhook dotarł do Render")
+
 
     msg_id = request.headers.get("X-MessageId")
     if not msg_id:
@@ -162,3 +164,4 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
