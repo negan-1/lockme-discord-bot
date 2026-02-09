@@ -1,6 +1,8 @@
 import os
 import sqlite3
+import time
 from datetime import datetime
+import threading
 import requests
 from fastapi import FastAPI, Request, HTTPException
 
@@ -10,6 +12,7 @@ LOCKME_API_BASE = "https://api.lock.me/v2.4"
 
 LOCKME_TOKEN = os.getenv("LOCKME_TOKEN", "")
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+DISCORD_ALERT_WEBHOOK = os.getenv("DISCORD_ALERT_WEBHOOK", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 START_AT = datetime.utcnow()
@@ -20,10 +23,15 @@ ROOM_NAMES = {
     12834: "Duchy Rosalie",
     14978: "Trupia Główka",
     10985: "Potworne Miasteczko",
-    10984: "American School Story"
+    10984: "American School Story",
 }
 
 DB_PATH = "seen.db"
+
+TOKEN_DEAD = False
+TOKEN_DEAD_SINCE = None
+TOKEN_ALERT_THREAD_STARTED = False
+
 
 def init_db():
     con = sqlite3.connect(DB_PATH)
@@ -50,11 +58,68 @@ def mark_seen(msg_id: str):
 def lockme_headers():
     return {"Authorization": f"Bearer {LOCKME_TOKEN}"}
 
+def post_webhook(url: str, text: str):
+    if not url:
+        return
+    r = requests.post(url, json={"content": text}, timeout=10)
+    r.raise_for_status()
+
 def discord_post(text: str):
     if not DISCORD_WEBHOOK:
         raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
-    r = requests.post(DISCORD_WEBHOOK, json={"content": text}, timeout=10)
-    r.raise_for_status()
+    post_webhook(DISCORD_WEBHOOK, text)
+
+def discord_alert(text: str):
+    if not DISCORD_ALERT_WEBHOOK:
+        post_webhook(DISCORD_WEBHOOK, text)
+        return
+    post_webhook(DISCORD_ALERT_WEBHOOK, text)
+
+def mark_token_dead():
+    global TOKEN_DEAD, TOKEN_DEAD_SINCE
+    if not TOKEN_DEAD:
+        TOKEN_DEAD = True
+        TOKEN_DEAD_SINCE = datetime.utcnow()
+        # natychmiastowy alert przy pierwszym wykryciu
+        try:
+            discord_alert(
+                "🔐 **Lock.me token wygasł / jest niepoprawny (401 Unauthorized).**\n"
+                "➡️ Podmień `LOCKME_TOKEN` w Render → Environment.\n"
+                "⏱️ Będę przypominać co 10 minut, dopóki problem nie zniknie."
+            )
+        except Exception:
+            pass
+
+def mark_token_ok():
+    global TOKEN_DEAD, TOKEN_DEAD_SINCE
+    if TOKEN_DEAD:
+        TOKEN_DEAD = False
+        TOKEN_DEAD_SINCE = None
+        try:
+            discord_alert("✅ Token Lock.me znów działa (401 zniknęło).")
+        except Exception:
+            pass
+
+def token_alert_loop():
+    while True:
+        time.sleep(600)
+        if TOKEN_DEAD:
+            try:
+                since = TOKEN_DEAD_SINCE.isoformat() if TOKEN_DEAD_SINCE else "?"
+                discord_alert(
+                    "🔐 **Przypomnienie:** token Lock.me nadal nie działa (401).\n"
+                    f"🕒 Od: {since} UTC\n"
+                    "➡️ Podmień `LOCKME_TOKEN` w Render → Environment."
+                )
+            except Exception:
+                pass
+
+def ensure_alert_thread():
+    global TOKEN_ALERT_THREAD_STARTED
+    if not TOKEN_ALERT_THREAD_STARTED:
+        TOKEN_ALERT_THREAD_STARTED = True
+        t = threading.Thread(target=token_alert_loop, daemon=True)
+        t.start()
 
 def ack_message(msg_id: str):
     r = requests.post(
@@ -62,11 +127,16 @@ def ack_message(msg_id: str):
         headers=lockme_headers(),
         timeout=10,
     )
+    if r.status_code == 401:
+        mark_token_dead()
+        return
     r.raise_for_status()
+
 
 @app.on_event("startup")
 def _startup():
     init_db()
+    ensure_alert_thread()
 
 
 @app.get("/health")
@@ -75,15 +145,19 @@ def health():
 
 @app.get("/test-discord")
 def test_discord():
-    discord_post("✅ Render -> Discord działa")
+    discord_post("✅ Render -> Discord działa (rezerwacje)")
     return {"ok": True}
+
+@app.get("/test-alert")
+def test_alert():
+    discord_alert("🚨 ✅ Render -> Discord działa (ALERTY / inny kanał)")
+    return {"ok": True}
+
 
 @app.get("/lockme")
 async def lockme_webhook(request: Request):
     if WEBHOOK_SECRET and request.query_params.get("s") != WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="forbidden")
-        discord_post("✅ Webhook dotarł do Render")
-
 
     msg_id = request.headers.get("X-MessageId")
     if not msg_id:
@@ -94,6 +168,7 @@ async def lockme_webhook(request: Request):
 
     try:
         if not LOCKME_TOKEN:
+            mark_token_dead()
             raise RuntimeError("LOCKME_TOKEN is missing (set it in Render Environment)")
 
         details = requests.get(
@@ -101,6 +176,14 @@ async def lockme_webhook(request: Request):
             headers=lockme_headers(),
             timeout=10,
         )
+
+        if details.status_code == 401:
+            mark_token_dead()
+            mark_seen(msg_id)
+            return {"ok": True}
+
+        mark_token_ok()
+
         details.raise_for_status()
         payload = details.json()
 
@@ -132,7 +215,6 @@ async def lockme_webhook(request: Request):
         price = data.get("price")
         pricer = data.get("pricer")
         source = data.get("source")
-
         client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
 
         msg = (
@@ -158,6 +240,7 @@ async def lockme_webhook(request: Request):
         return {"ok": True}
 
     except Exception as e:
+
         try:
             ack_message(msg_id)
             mark_seen(msg_id)
@@ -170,8 +253,3 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
-
-
-
-
-
