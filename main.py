@@ -1,16 +1,18 @@
 import os
 import sqlite3
+from datetime import datetime
 import requests
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, HTTPException
 
 app = FastAPI()
-import os
 
 LOCKME_API_BASE = "https://api.lock.me/v2.4"
 
 LOCKME_TOKEN = os.getenv("LOCKME_TOKEN", "")
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "123")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
+START_AT = datetime.utcnow()
 
 ROOM_NAMES = {
     1398: "Dooby Doo",
@@ -19,7 +21,6 @@ ROOM_NAMES = {
     14978: "Trupia Główka",
     10985: "Potworne Miasteczko",
     10984: "American School Story"
-
 }
 
 DB_PATH = "seen.db"
@@ -50,6 +51,8 @@ def lockme_headers():
     return {"Authorization": f"Bearer {LOCKME_TOKEN}"}
 
 def discord_post(text: str):
+    if not DISCORD_WEBHOOK:
+        raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
     r = requests.post(DISCORD_WEBHOOK, json={"content": text}, timeout=10)
     r.raise_for_status()
 
@@ -61,10 +64,13 @@ def ack_message(msg_id: str):
     )
     r.raise_for_status()
 
-
 @app.on_event("startup")
 def _startup():
     init_db()
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 @app.get("/lockme")
 async def lockme_webhook(request: Request):
@@ -79,6 +85,9 @@ async def lockme_webhook(request: Request):
         return {"ok": True}
 
     try:
+        if not LOCKME_TOKEN:
+            raise RuntimeError("LOCKME_TOKEN is missing (set it in Render Environment)")
+
         details = requests.get(
             f"{LOCKME_API_BASE}/message/{msg_id}",
             headers=lockme_headers(),
@@ -90,7 +99,17 @@ async def lockme_webhook(request: Request):
         action = payload.get("action")
         data = payload.get("data", {})
 
-        # nie interesuje nas nic poza "add"
+        t = data.get("time")
+        if t:
+            try:
+                event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+                if event_time < START_AT:
+                    ack_message(msg_id)
+                    mark_seen(msg_id)
+                    return {"ok": True}
+            except Exception:
+                pass
+
         if action != "add":
             ack_message(msg_id)
             mark_seen(msg_id)
@@ -103,7 +122,9 @@ async def lockme_webhook(request: Request):
         time_ = data.get("hour") or "?"
         people = data.get("people")
         price = data.get("price")
+        pricer = data.get("pricer")
         source = data.get("source")
+
         client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
 
         msg = (
@@ -115,6 +136,8 @@ async def lockme_webhook(request: Request):
         )
         if people is not None:
             msg += f"\n👥 Osoby: {people}"
+        if pricer:
+            msg += f"\n🏷️ Cennik: {pricer}"
         if price is not None:
             msg += f"\n💰 Cena: {price}"
         if source:
@@ -122,24 +145,20 @@ async def lockme_webhook(request: Request):
 
         discord_post(msg)
 
-        # ACK + zapisz jako obsłużone
         ack_message(msg_id)
         mark_seen(msg_id)
         return {"ok": True}
 
     except Exception as e:
-        # INFO na discord (opcjonalnie)
-        try:
-            discord_post(f"⚠️ Błąd obsługi webhooka: {type(e).__name__}: {e}")
-        except Exception:
-            pass
-
-        # <<< KLUCZ: spróbuj ACK nawet przy błędzie, żeby Lock.me nie retry >>
         try:
             ack_message(msg_id)
             mark_seen(msg_id)
         except Exception:
             pass
 
-        # zwróć 200, żeby Lock.me nie uznał, że webhook padł
+        try:
+            discord_post(f"⚠️ Błąd obsługi webhooka (msg_id={msg_id}): {type(e).__name__}: {e}")
+        except Exception:
+            pass
+
         return {"ok": True}
