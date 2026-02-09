@@ -68,14 +68,14 @@ def ack_message(msg_id: str):
 def _startup():
     init_db()
 
-@app.get("/test-discord")
-def test_discord():
-    discord_post("✅ Render -> Discord działa")
-    return {"ok": True}
-
 
 @app.get("/health")
 def health():
+    return {"ok": True}
+
+@app.get("/test-discord")
+def test_discord():
+    discord_post("✅ Render -> Discord działa")
     return {"ok": True}
 
 @app.get("/lockme")
@@ -170,6 +170,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
