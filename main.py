@@ -217,7 +217,10 @@ async def lockme_webhook(request: Request):
             return {"ok": True}
 
         room_id = data.get("roomid") or payload.get("roomid")
-        room_name = ROOM_NAMES.get(int(room_id), f"Pokój #{room_id}") if room_id else "Nieznany pokój"
+room_id_int = int(room_id) if room_id else None
+
+room_name = ROOM_NAMES.get(room_id_int, f"Pokój #{room_id}") if room_id_int else "---"
+room_mention = ROOM_MENTIONS.get(room_id_int, "")
 
         date = data.get("date") or "?"
         time_ = data.get("hour") or "?"
@@ -264,6 +267,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
