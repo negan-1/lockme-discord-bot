@@ -142,7 +142,7 @@ def ack_message(msg_id: str):
 
 def discord_post(text: str):
     if not DISCORD_ALL_WEBHOOK:
-        raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
+        raise RuntimeError("DISCORD_ALL_WEBHOOK is missing (set it in Render Environment)")
     post_webhook(DISCORD_ALL_WEBHOOK, text)
 
 
@@ -271,6 +271,7 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
 
 
 
