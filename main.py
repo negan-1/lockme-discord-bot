@@ -264,6 +264,7 @@ async def lockme_webhook(request: Request):
             msg += f"\n🔗 Źródło: {source}"
 
         discord_post(msg)
+        discord_post(f"DEBUG today: date='{date}' today_str='{today_str}' startswith={date.startswith(today_str)}")
 
         ack_message(msg_id)
         mark_seen(msg_id)
@@ -283,6 +284,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
