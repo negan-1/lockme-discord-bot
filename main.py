@@ -234,8 +234,11 @@ async def lockme_webhook(request: Request):
 
         date = (data.get("date") or "").strip()
 
-        today_str = (datetime.utcnow() + timedelta(hours=1)).strftime("%Y-%m-%d")
-        today_mention = f"{TODAY_ROLE} " if date.startswith(today_str) else ""
+        from zoneinfo import ZoneInfo
+        today_str = datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d")
+
+        today_mention = f"{TODAY_ROLE} " if date == today_str else ""
+
 
         discord_post(f"DEBUG today: date='{date}' today_str='{today_str}' startswith={date.startswith(today_str)}")
 
@@ -286,6 +289,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
