@@ -21,7 +21,7 @@ ROOM_NAMES = {
     1398: "Dooby Doo",
     2132: "Syreni Śpiew",
     12834: "Duchy Rosalie",
-    14978: "<@&1471190112732713215>",
+    14978: "Trupia Główka",
     10985: "Potworne Miasteczko",
     10984: "American School Story",
 }
@@ -31,8 +31,8 @@ ROOM_MENTIONS = {
     2132: "<@&1471190231247228958>",
     12834: "<@&1471189971158306970>",
     14978: "<@&1471190112732713215>",
-    10985: "<@$1470541456686059674>",
-    10984: "American School Story",
+    10985: "<@&1470541456686059674>",
+    10984: "<@&1471190274670596309>",
 }
 
 
@@ -267,6 +267,7 @@ room_mention = ROOM_MENTIONS.get(room_id_int, "")
             pass
 
         return {"ok": True}
+
 
 
 
