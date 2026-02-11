@@ -221,7 +221,7 @@ async def lockme_webhook(request: Request):
             header = f"🚨 {TODAY_ROLE} **REZERWACJA NA DZIŚ!** 🚨"
         else:
             target_webhook = DISCORD_ALL_WEBHOOK
-            header = "📩 **NOWA REZERWACJA**"
+            header = "**NOWA REZERWACJA**"
 
         time_val = data.get("hour") or "?"
         client = f"{data.get('name', '')} {data.get('surname', '')}".strip() or "?"
@@ -252,3 +252,4 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
