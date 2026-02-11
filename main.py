@@ -21,10 +21,20 @@ ROOM_NAMES = {
     1398: "Dooby Doo",
     2132: "Syreni Śpiew",
     12834: "Duchy Rosalie",
-    14978: "Trupia Główka",
+    14978: "<@&1471190112732713215>",
+    10985: "Potworne Miasteczko",
+    10984: "American School Story",
+}
+
+ROOM_MENTIONS = {
+    1398: "<@&1471190164486492456>",
+    2132: "<@&1471190231247228958>",
+    12834: "<@&1471189971158306970>",
+    14978: "<@&1471190112732713215>",
     10985: "<@$1470541456686059674>",
     10984: "American School Story",
 }
+
 
 DB_PATH = "seen.db"
 
@@ -218,6 +228,7 @@ async def lockme_webhook(request: Request):
         client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
 
         msg = (
+            f"{room_mention}\n"
             f"📩 **NOWA REZERWACJA**\n"
             f"🏠 Pokój: {room_name}\n"
             f"📅 Data: {date}\n"
@@ -253,6 +264,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
