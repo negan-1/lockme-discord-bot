@@ -237,6 +237,8 @@ async def lockme_webhook(request: Request):
         today_str = (datetime.utcnow() + timedelta(hours=1)).strftime("%Y-%m-%d")
         today_mention = f"{TODAY_ROLE} " if date.startswith(today_str) else ""
 
+        discord_post(f"DEBUG today: date='{date}' today_str='{today_str}' startswith={date.startswith(today_str)}")
+
         time_ = data.get("hour") or "?"
         people = data.get("people")
         price = data.get("price")
@@ -264,7 +266,7 @@ async def lockme_webhook(request: Request):
             msg += f"\n🔗 Źródło: {source}"
 
         discord_post(msg)
-        discord_post(f"DEBUG today: date='{date}' today_str='{today_str}' startswith={date.startswith(today_str)}")
+        
 
         ack_message(msg_id)
         mark_seen(msg_id)
@@ -284,6 +286,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
