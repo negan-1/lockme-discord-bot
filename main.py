@@ -223,7 +223,7 @@ async def lockme_webhook(request: Request):
         room_mention = ROOM_MENTIONS.get(room_id_int, "")
 
 
-        date = data.get("date") or "?"
+        date = (data.get("date") or "?").strip()
         time_ = data.get("hour") or "?"
         people = data.get("people")
         price = data.get("price")
@@ -272,6 +272,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
