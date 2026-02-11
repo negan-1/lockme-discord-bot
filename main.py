@@ -2,21 +2,24 @@ import os
 import sqlite3
 import time
 from datetime import datetime
-from datetime import timedelta
 import threading
 import requests
 from fastapi import FastAPI, Request, HTTPException
+from zoneinfo import ZoneInfo
 
 app = FastAPI()
 
 LOCKME_API_BASE = "https://api.lock.me/v2.4"
 
+
 LOCKME_TOKEN = os.getenv("LOCKME_TOKEN", "")
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+DISCORD_TODAY_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+DISCORD_ALL_WEBHOOK = os.getenv("DISCORD_ALL_WEBHOOK", "")
 DISCORD_ALERT_WEBHOOK = os.getenv("DISCORD_ALERT_WEBHOOK", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 START_AT = datetime.utcnow()
+
 
 ROOM_NAMES = {
     1398: "Dooby Doo",
@@ -37,7 +40,6 @@ ROOM_MENTIONS = {
 }
 TODAY_ROLE = "<@&1471211064195682513>"
 
-
 DB_PATH = "seen.db"
 
 TOKEN_DEAD = False
@@ -52,6 +54,7 @@ def init_db():
     con.commit()
     con.close()
 
+
 def already_seen(msg_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
@@ -60,6 +63,7 @@ def already_seen(msg_id: str) -> bool:
     con.close()
     return row is not None
 
+
 def mark_seen(msg_id: str):
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
@@ -67,8 +71,11 @@ def mark_seen(msg_id: str):
     con.commit()
     con.close()
 
+
+# --- KOMUNIKACJA Z WEBHOOKAMI ---
 def lockme_headers():
     return {"Authorization": f"Bearer {LOCKME_TOKEN}"}
+
 
 def post_webhook(url: str, text: str):
     if not url:
@@ -84,74 +91,53 @@ def post_webhook(url: str, text: str):
     r.raise_for_status()
 
 
-def discord_post(text: str):
-    if not DISCORD_WEBHOOK:
-        raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
-    post_webhook(DISCORD_WEBHOOK, text)
-
 def discord_alert(text: str):
-    if not DISCORD_ALERT_WEBHOOK:
-        post_webhook(DISCORD_WEBHOOK, text)
-        return
-    post_webhook(DISCORD_ALERT_WEBHOOK, text)
+    target = DISCORD_ALERT_WEBHOOK or DISCORD_TODAY_WEBHOOK
+    try:
+        post_webhook(target, text)
+    except:
+        pass
 
+
+# --- AUTOMATYCZNE POWIADOMIENIA O TOKENIE ---
 def mark_token_dead():
     global TOKEN_DEAD, TOKEN_DEAD_SINCE
     if not TOKEN_DEAD:
         TOKEN_DEAD = True
         TOKEN_DEAD_SINCE = datetime.utcnow()
-        try:
-            discord_alert(
-                "🔐 **Lock.me token wygasł / jest niepoprawny (401 Unauthorized).**\n"
-                "➡️ Podmień `LOCKME_TOKEN` w Render → Environment.\n"
-                "⏱️ Będę przypominać co 10 minut, dopóki problem nie zniknie."
-            )
-        except Exception:
-            pass
+        discord_alert("Lock.me token wygasł (401)")
+
 
 def mark_token_ok():
     global TOKEN_DEAD, TOKEN_DEAD_SINCE
     if TOKEN_DEAD:
         TOKEN_DEAD = False
         TOKEN_DEAD_SINCE = None
-        try:
-            discord_alert("✅ Token Lock.me znów działa (401 zniknęło).")
-        except Exception:
-            pass
+        discord_alert("Token Lock.me znów działa poprawnie")
 
 def token_alert_loop():
     while True:
-        time.sleep(600)
+        time.sleep(600)  # Co 10 minut
         if TOKEN_DEAD:
-            try:
-                since = TOKEN_DEAD_SINCE.isoformat() if TOKEN_DEAD_SINCE else "?"
-                discord_alert(
-                    "🔐 **Przypomnienie:** token Lock.me nadal nie działa (401).\n"
-                    f"🕒 Od: {since} UTC\n"
-                    "➡️ Podmień `LOCKME_TOKEN` w Render → Environment."
-                )
-            except Exception:
-                pass
+            discord_alert("Przypomnienie: token Lock.me nadal nie działa.")
+
 
 def ensure_alert_thread():
     global TOKEN_ALERT_THREAD_STARTED
     if not TOKEN_ALERT_THREAD_STARTED:
         TOKEN_ALERT_THREAD_STARTED = True
-        t = threading.Thread(target=token_alert_loop, daemon=True)
-        t.start()
+        threading.Thread(target=token_alert_loop, daemon=True).start()
+
 
 def ack_message(msg_id: str):
-    r = requests.post(
-        f"{LOCKME_API_BASE}/message/{msg_id}",
-        headers=lockme_headers(),
-        timeout=10,
-    )
-    if r.status_code == 401:
-        mark_token_dead()
-        return
-    r.raise_for_status()
+    try:
+        r = requests.post(f"{LOCKME_API_BASE}/message/{msg_id}", headers=lockme_headers(), timeout=10)
+        if r.status_code == 401: mark_token_dead()
+    except:
+        pass
 
 
+# --- GŁÓWNA OBSŁUGA WEBHOOKA ---
 @app.on_event("startup")
 def _startup():
     init_db()
@@ -162,16 +148,6 @@ def _startup():
 def health():
     return {"ok": True}
 
-@app.get("/test-discord")
-def test_discord():
-    discord_post("✅ Render -> Discord działa (rezerwacje)")
-    return {"ok": True}
-
-@app.get("/test-alert")
-def test_alert():
-    discord_alert("🚨 ✅ Render -> Discord działa (ALERTY / inny kanał)")
-    return {"ok": True}
-
 
 @app.get("/lockme")
 async def lockme_webhook(request: Request):
@@ -179,133 +155,76 @@ async def lockme_webhook(request: Request):
         raise HTTPException(status_code=403, detail="forbidden")
 
     msg_id = request.headers.get("X-MessageId")
-    if not msg_id:
-        raise HTTPException(status_code=400, detail="missing X-MessageId")
-
-    if already_seen(msg_id):
+    if not msg_id or already_seen(msg_id):
         return {"ok": True}
 
     try:
         if not LOCKME_TOKEN:
             mark_token_dead()
-            raise RuntimeError("LOCKME_TOKEN is missing (set it in Render Environment)")
+            raise RuntimeError("Brak LOCKME_TOKEN")
 
-        details = requests.get(
-            f"{LOCKME_API_BASE}/message/{msg_id}",
-            headers=lockme_headers(),
-            timeout=10,
-        )
-
+#z lockme
+        details = requests.get(f"{LOCKME_API_BASE}/message/{msg_id}", headers=lockme_headers(), timeout=10)
         if details.status_code == 401:
             mark_token_dead()
             mark_seen(msg_id)
             return {"ok": True}
 
         mark_token_ok()
-
         details.raise_for_status()
         payload = details.json()
 
-        action = payload.get("action")
-        data = payload.get("data", {})
-
-        t = data.get("time")
-        if t:
-            try:
-                event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
-                if event_time < START_AT:
-                    ack_message(msg_id)
-                    mark_seen(msg_id)
-                    return {"ok": True}
-            except Exception:
-                pass
-
-        if action != "add":
+        #tylko add
+        if payload.get("action") != "add":
             ack_message(msg_id)
             mark_seen(msg_id)
             return {"ok": True}
 
+        data = payload.get("data", {})
         room_id = data.get("roomid") or payload.get("roomid")
         room_id_int = int(room_id) if room_id else None
 
-        room_name = ROOM_NAMES.get(room_id_int, f"Pokój #{room_id}") if room_id_int else "---"
+        room_name = ROOM_NAMES.get(room_id_int, f"Pokój #{room_id}")
         room_mention = ROOM_MENTIONS.get(room_id_int, "")
 
+#kanały
+        date_str = (data.get("date") or "").strip()
+        warsaw_now = datetime.now(ZoneInfo("Europe/Warsaw"))
+        today_str = warsaw_now.strftime("%Y-%m-%d")
 
-        date = (data.get("date") or "").strip()
+        if date_str == today_str:
+            target_webhook = DISCORD_TODAY_WEBHOOK
+            header = f"🚨 {TODAY_ROLE} **REZERWACJA NA DZIŚ!** 🚨"
+        else:
+            target_webhook = DISCORD_ALL_WEBHOOK
+            header = "📩 **NOWA REZERWACJA**"
 
-        from zoneinfo import ZoneInfo
-        today_str = datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d")
-
-        today_mention = f"{TODAY_ROLE} " if date == today_str else ""
-
-
-
-        time_ = data.get("hour") or "?"
-        people = data.get("people")
-        price = data.get("price")
-        pricer = data.get("pricer")
-        source = data.get("source")
-        client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
-
-        
-
+        time_val = data.get("hour") or "?"
+        client = f"{data.get('name', '')} {data.get('surname', '')}".strip() or "?"
+        comment = data.get("comment", "").strip()
+#info
         msg = (
-            f"📩 **NOWA REZERWACJA**\n"
-            f"{today_mention}{room_mention}\n"
-            f"🏠 Pokój: {room_name}\n"
-            f"📅 Data: {date}\n"
-            f"🕒 Godzina: {time_}\n"
+            f"{header}\n"
+            f"{room_mention}\n"
+            f"🏠 Pokój: **{room_name}**\n"
+            f"📅 Data: {date_str}\n"
+            f"🕒 Godzina: {time_val}\n"
             f"👤 Klient: {client}"
         )
-        if people is not None:
-            msg += f"\n👥 Osoby: {people}"
-        if pricer:
-            msg += f"\n🏷️ Cennik: {pricer}"
-        if price is not None:
-            msg += f"\n💰 Cena: {price}"
-        if source:
-            msg += f"\n🔗 Źródło: {source}"
 
-        discord_post(msg)
-        
+        if data.get("people"): msg += f"\n👥 Osoby: {data['people']}"
+        if data.get("price"):  msg += f"\n💰 Cena: {data['price']} zł"
+        if data.get("source"): msg += f"\n🔗 Źródło: {data['source']}"
+        if comment:
+            msg += f"\n\n💬 **Komentarz:**\n```{comment}```"
+
+        post_webhook(target_webhook or DISCORD_TODAY_WEBHOOK, msg)
 
         ack_message(msg_id)
         mark_seen(msg_id)
-        return {"ok": True}
 
     except Exception as e:
+        discord_alert(f"⚠️ Błąd (msg_id={msg_id}): {e}")
+        mark_seen(msg_id)
 
-        try:
-            ack_message(msg_id)
-            mark_seen(msg_id)
-        except Exception:
-            pass
-
-        try:
-            discord_post(f"⚠️ Błąd obsługi webhooka (msg_id={msg_id}): {type(e).__name__}: {e}")
-        except Exception:
-            pass
-
-        return {"ok": True}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return {"ok": True}
