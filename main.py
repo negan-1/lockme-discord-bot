@@ -240,7 +240,6 @@ async def lockme_webhook(request: Request):
         today_mention = f"{TODAY_ROLE} " if date == today_str else ""
 
 
-        discord_post(f"DEBUG today: date='{date}' today_str='{today_str}' startswith={date.startswith(today_str)}")
 
         time_ = data.get("hour") or "?"
         people = data.get("people")
@@ -289,6 +288,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
