@@ -13,7 +13,7 @@ LOCKME_API_BASE = "https://api.lock.me/v2.4"
 
 
 LOCKME_TOKEN = os.getenv("LOCKME_TOKEN", "")
-DISCORD_TODAY_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+DISCORD_TODAY_WEBHOOK = os.getenv("DISCORD_TODAY_WEBHOOK", "")
 DISCORD_ALL_WEBHOOK = os.getenv("DISCORD_ALL_WEBHOOK", "")
 DISCORD_ALERT_WEBHOOK = os.getenv("DISCORD_ALERT_WEBHOOK", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
@@ -257,5 +257,6 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
 
 
