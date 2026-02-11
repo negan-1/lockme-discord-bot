@@ -91,7 +91,6 @@ def mark_token_dead():
     if not TOKEN_DEAD:
         TOKEN_DEAD = True
         TOKEN_DEAD_SINCE = datetime.utcnow()
-        # natychmiastowy alert przy pierwszym wykryciu
         try:
             discord_alert(
                 "🔐 **Lock.me token wygasł / jest niepoprawny (401 Unauthorized).**\n"
@@ -201,16 +200,16 @@ async def lockme_webhook(request: Request):
         action = payload.get("action")
         data = payload.get("data", {})
 
-        t = data.get("time")
-        if t:
-            try:
-                event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
-                if event_time < START_AT:
-                    ack_message(msg_id)
-                    mark_seen(msg_id)
-                    return {"ok": True}
-            except Exception:
-                pass
+        # t = data.get("time")
+        # if t:
+        #     try:
+        #         event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+        #         if event_time < START_AT:
+        #             ack_message(msg_id)
+        #             mark_seen(msg_id)
+        #             return {"ok": True}
+        #     except Exception:
+        #         pass
 
         if action != "add":
             ack_message(msg_id)
@@ -273,6 +272,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
