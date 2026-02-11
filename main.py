@@ -237,8 +237,7 @@ async def lockme_webhook(request: Request):
 
         msg = (
             f"📩 **NOWA REZERWACJA**\n"
-            f"{today_mention}\n"
-            f"{room_mention}\n"
+            f"{today_mention}{room_mention}\n"
             f"🏠 Pokój: {room_name}\n"
             f"📅 Data: {date}\n"
             f"🕒 Godzina: {time_}\n"
@@ -273,6 +272,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
