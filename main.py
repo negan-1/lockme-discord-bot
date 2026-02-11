@@ -152,6 +152,11 @@ def _startup():
     init_db()
     ensure_alert_thread()
 
+@app.get("/")
+def root():
+    return {"ok": True, "service": "lockme-discord-bot"}
+
+
 
 @app.get("/health")
 def health():
@@ -266,6 +271,7 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
 
 
 
