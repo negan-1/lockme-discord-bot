@@ -11,15 +11,15 @@ app = FastAPI()
 
 LOCKME_API_BASE = "https://api.lock.me/v2.4"
 
-
 LOCKME_TOKEN = os.getenv("LOCKME_TOKEN", "")
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
+
 DISCORD_TODAY_WEBHOOK = os.getenv("DISCORD_TODAY_WEBHOOK", "")
-DISCORD_ALL_WEBHOOK = os.getenv("DISCORD_ALL_WEBHOOK", "")
 DISCORD_ALERT_WEBHOOK = os.getenv("DISCORD_ALERT_WEBHOOK", "")
+
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 START_AT = datetime.utcnow()
-
 
 ROOM_NAMES = {
     1398: "Dooby Doo",
@@ -30,20 +30,16 @@ ROOM_NAMES = {
     10984: "American School Story",
 }
 
-def get_mention(env_key):
-    role_id = os.getenv(env_key)
-    return f"<@&{role_id}>" if role_id else ""
-
 ROOM_MENTIONS = {
-    1398:  get_mention("R_D"),
-    2132:  get_mention("R_S"),
-    12834: get_mention("R_R"),
-    14978: get_mention("R_T"),
-    10985: get_mention("R_P"),
-    10984: get_mention("R_A"),
+    1398: "<@&1471190164486492456>",
+    2132: "<@&1471190231247228958>",
+    12834: "<@&1471189971158306970>",
+    14978: "<@&1471190112732713215>",
+    10985: "<@&1470541456686059674>",
+    10984: "<@&1471190274670596309>",
 }
 
-TODAY_ROLE = get_mention("ROLE_TODAY")
+TODAY_ROLE = "<@&1471211064195682513>"
 
 DB_PATH = "seen.db"
 
@@ -77,39 +73,51 @@ def mark_seen(msg_id: str):
     con.close()
 
 
-# --- KOMUNIKACJA Z WEBHOOKAMI ---
 def lockme_headers():
     return {"Authorization": f"Bearer {LOCKME_TOKEN}"}
 
 
 def post_webhook(url: str, text: str):
     if not url:
-        raise RuntimeError("Webhook URL is empty (check Render Environment vars)")
+        return
     r = requests.post(
         url,
-        json={"content": text, "allowed_mentions": {"parse": ["roles"]}},
-        timeout=10
+        json={
+            "content": text,
+            "allowed_mentions": {"parse": ["roles"]},
+        },
+        timeout=10,
     )
     r.raise_for_status()
 
 
+def discord_post(text: str):
+    if not DISCORD_WEBHOOK:
+        raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
+    post_webhook(DISCORD_WEBHOOK, text)
+
 
 def discord_alert(text: str):
-    target = DISCORD_ALERT_WEBHOOK or DISCORD_ALL_WEBHOOK or DISCORD_TODAY_WEBHOOK
+    target = DISCORD_ALERT_WEBHOOK or DISCORD_WEBHOOK
     try:
         post_webhook(target, text)
-    except Exception as e:
-        print("discord_alert failed:", e)
+    except Exception:
+        pass
 
 
-
-# --- AUTOMATYCZNE POWIADOMIENIA O TOKENIE ---
 def mark_token_dead():
     global TOKEN_DEAD, TOKEN_DEAD_SINCE
     if not TOKEN_DEAD:
         TOKEN_DEAD = True
         TOKEN_DEAD_SINCE = datetime.utcnow()
-        discord_alert("Lock.me token wygasł (401)")
+        try:
+            discord_alert(
+                "🔐 **Lock.me token wygasł / jest niepoprawny (401 Unauthorized).**\n"
+                "➡️ Podmień `LOCKME_TOKEN` w Render → Environment.\n"
+                "⏱️ Będę przypominać co 10 minut, dopóki problem nie zniknie."
+            )
+        except Exception:
+            pass
 
 
 def mark_token_ok():
@@ -117,64 +125,73 @@ def mark_token_ok():
     if TOKEN_DEAD:
         TOKEN_DEAD = False
         TOKEN_DEAD_SINCE = None
-        discord_alert("Token Lock.me znów działa poprawnie")
+        try:
+            discord_alert("✅ Token Lock.me znów działa (401 zniknęło).")
+        except Exception:
+            pass
+
 
 def token_alert_loop():
     while True:
-        time.sleep(600)  # Co 10 minut
+        time.sleep(600)
         if TOKEN_DEAD:
-            discord_alert("Przypomnienie: token Lock.me nadal nie działa.")
+            try:
+                since = TOKEN_DEAD_SINCE.isoformat() if TOKEN_DEAD_SINCE else "?"
+                discord_alert(
+                    "🔐 **Przypomnienie:** token Lock.me nadal nie działa (401).\n"
+                    f"🕒 Od: {since} UTC\n"
+                    "➡️ Podmień `LOCKME_TOKEN` w Render → Environment."
+                )
+            except Exception:
+                pass
 
 
 def ensure_alert_thread():
     global TOKEN_ALERT_THREAD_STARTED
     if not TOKEN_ALERT_THREAD_STARTED:
         TOKEN_ALERT_THREAD_STARTED = True
-        threading.Thread(target=token_alert_loop, daemon=True).start()
+        t = threading.Thread(target=token_alert_loop, daemon=True)
+        t.start()
 
 
 def ack_message(msg_id: str):
-    try:
-        r = requests.post(f"{LOCKME_API_BASE}/message/{msg_id}", headers=lockme_headers(), timeout=10)
-        if r.status_code == 401: mark_token_dead()
-    except:
-        pass
+    r = requests.post(
+        f"{LOCKME_API_BASE}/message/{msg_id}",
+        headers=lockme_headers(),
+        timeout=10,
+    )
+    if r.status_code == 401:
+        mark_token_dead()
+        return
+    r.raise_for_status()
 
-def discord_post(text: str):
-    if not DISCORD_ALL_WEBHOOK:
-        raise RuntimeError("DISCORD_ALL_WEBHOOK is missing (set it in Render Environment)")
-    post_webhook(DISCORD_ALL_WEBHOOK, text)
 
-
-# --- GŁÓWNA OBSŁUGA WEBHOOKA ---
 @app.on_event("startup")
 def _startup():
     init_db()
     ensure_alert_thread()
+
 
 @app.get("/")
 def root():
     return {"ok": True, "service": "lockme-discord-bot"}
 
 
-
 @app.get("/health")
 def health():
     return {"ok": True}
+
 
 @app.get("/test-discord")
 def test_discord():
     discord_post("✅ Render -> Discord działa (rezerwacje)")
     return {"ok": True}
 
-@app.get("/test-all")
-def test_all():
-    post_webhook(DISCORD_ALL_WEBHOOK, "✅ TEST ALL webhook działa")
-    return {"ok": True}
 
 @app.get("/test-today")
 def test_today():
-    post_webhook(DISCORD_TODAY_WEBHOOK, "✅ TEST TODAY webhook działa")
+    target = DISCORD_TODAY_WEBHOOK or DISCORD_WEBHOOK
+    post_webhook(target, "✅ Render -> Discord działa (DZISIAJ)")
     return {"ok": True}
 
 
@@ -184,33 +201,36 @@ async def lockme_webhook(request: Request):
         raise HTTPException(status_code=403, detail="forbidden")
 
     msg_id = request.headers.get("X-MessageId")
-    if not msg_id or already_seen(msg_id):
+    if not msg_id:
+        raise HTTPException(status_code=400, detail="missing X-MessageId")
+
+    if already_seen(msg_id):
         return {"ok": True}
 
     try:
         if not LOCKME_TOKEN:
             mark_token_dead()
-            raise RuntimeError("Brak LOCKME_TOKEN")
+            raise RuntimeError("LOCKME_TOKEN is missing (set it in Render Environment)")
 
-#z lockme
-        details = requests.get(f"{LOCKME_API_BASE}/message/{msg_id}", headers=lockme_headers(), timeout=10)
+        details = requests.get(
+            f"{LOCKME_API_BASE}/message/{msg_id}",
+            headers=lockme_headers(),
+            timeout=10,
+        )
+
         if details.status_code == 401:
             mark_token_dead()
             mark_seen(msg_id)
             return {"ok": True}
 
         mark_token_ok()
+
         details.raise_for_status()
         payload = details.json()
 
-        #tylko add
-        if payload.get("action") != "add":
-            ack_message(msg_id)
-            mark_seen(msg_id)
-            return {"ok": True}
-
+        action = payload.get("action")
         data = payload.get("data", {})
-#tylko aktualne
+
         t = data.get("time")
         if t:
             try:
@@ -222,58 +242,65 @@ async def lockme_webhook(request: Request):
             except Exception:
                 pass
 
-
+        if action != "add":
+            ack_message(msg_id)
+            mark_seen(msg_id)
+            return {"ok": True}
 
         room_id = data.get("roomid") or payload.get("roomid")
         room_id_int = int(room_id) if room_id else None
 
-        room_name = ROOM_NAMES.get(room_id_int, f"Pokój #{room_id}")
+        room_name = ROOM_NAMES.get(room_id_int, f"Pokój #{room_id}") if room_id_int else "---"
         room_mention = ROOM_MENTIONS.get(room_id_int, "")
 
-#kanały
-        date_str = (data.get("date") or "").strip()
-        warsaw_now = datetime.now(ZoneInfo("Europe/Warsaw"))
-        today_str = warsaw_now.strftime("%Y-%m-%d")
+        date = (data.get("date") or "").strip()
 
-        if date_str == today_str:
-            target_webhook = DISCORD_TODAY_WEBHOOK
-            header = f"🚨 {TODAY_ROLE} **REZERWACJA NA DZIŚ!** 🚨"
-        else:
-            target_webhook = DISCORD_ALL_WEBHOOK
-            header = "**NOWA REZERWACJA**"
+        today_str = datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d")
+        is_today = (date == today_str)
 
-        time_val = data.get("hour") or "?"
-        client = f"{data.get('name', '')} {data.get('surname', '')}".strip() or "?"
-        comment = data.get("comment", "").strip()
-#info
+        today_mention = f"{TODAY_ROLE} " if is_today else ""
+
+        time_ = data.get("hour") or "?"
+        people = data.get("people")
+        price = data.get("price")
+        pricer = data.get("pricer")
+        source = data.get("source")
+        client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
+
         msg = (
-            f"{header}\n"
-            f"{room_mention}\n"
-            f"🏠 Pokój: **{room_name}**\n"
-            f"📅 Data: {date_str}\n"
-            f"🕒 Godzina: {time_val}\n"
+            f"{'🚨 ' if is_today else ''}{'**REZERWACJA NA DZIŚ!**' if is_today else '📩 **NOWA REZERWACJA**'}\n"
+            f"{today_mention}{room_mention}\n"
+            f"🏠 Pokój: {room_name}\n"
+            f"📅 Data: {date}\n"
+            f"🕒 Godzina: {time_}\n"
             f"👤 Klient: {client}"
         )
+        if people is not None:
+            msg += f"\n👥 Osoby: {people}"
+        if pricer:
+            msg += f"\n🏷️ Cennik: {pricer}"
+        if price is not None:
+            msg += f"\n💰 Cena: {price}"
+        if source:
+            msg += f"\n🔗 Źródło: {source}"
 
-        if data.get("people"): msg += f"\n👥 Osoby: {data['people']}"
-        if data.get("price"):  msg += f"\n💰 Cena: {data['price']} zł"
-        if data.get("source"): msg += f"\n🔗 Źródło: {data['source']}"
-        if comment:
-            msg += f"\n\n💬 **Komentarz:**\n```{comment}```"
-
-        post_webhook(target_webhook or DISCORD_TODAY_WEBHOOK, msg)
+        target = (DISCORD_TODAY_WEBHOOK if (is_today and DISCORD_TODAY_WEBHOOK) else DISCORD_WEBHOOK)
+        post_webhook(target, msg)
 
         ack_message(msg_id)
         mark_seen(msg_id)
+        return {"ok": True}
 
     except Exception as e:
-        discord_alert(f"⚠️ Błąd (msg_id={msg_id}): {e}")
-        mark_seen(msg_id)
+        try:
+            ack_message(msg_id)
+            mark_seen(msg_id)
+        except Exception:
+            pass
 
-    return {"ok": True}
+        try:
+            discord_post(f"⚠️ Błąd obsługi webhooka (msg_id={msg_id}): {type(e).__name__}: {e}")
+        except Exception:
+            pass
 
-
-
-
-
-
+        return {"ok": True}
