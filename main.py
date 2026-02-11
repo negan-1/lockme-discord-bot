@@ -30,15 +30,20 @@ ROOM_NAMES = {
     10984: "American School Story",
 }
 
+def get_mention(env_key):
+    role_id = os.getenv(env_key)
+    return f"<@&{role_id}>" if role_id else ""
+
 ROOM_MENTIONS = {
-    1398: "<@&1471190164486492456>",
-    2132: "<@&1471190231247228958>",
-    12834: "<@&1471189971158306970>",
-    14978: "<@&1471190112732713215>",
-    10985: "<@&1470541456686059674>",
-    10984: "<@&1471190274670596309>",
+    1398:  get_mention("R_D"),
+    2132:  get_mention("R_S"),
+    12834: get_mention("R_R"),
+    14978: get_mention("R_T"),
+    10985: get_mention("R_P"),
+    10984: get_mention("R_A"),
 }
-TODAY_ROLE = "<@&1471211064195682513>"
+
+TODAY_ROLE = get_mention("ROLE_TODAY")
 
 DB_PATH = "seen.db"
 
@@ -252,4 +257,5 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
 
