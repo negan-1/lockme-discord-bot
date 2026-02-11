@@ -34,6 +34,7 @@ ROOM_MENTIONS = {
     10985: "<@&1470541456686059674>",
     10984: "<@&1471190274670596309>",
 }
+TODAY_ROLE = "<@&1471211064195682513>"
 
 
 DB_PATH = "seen.db"
@@ -231,8 +232,12 @@ async def lockme_webhook(request: Request):
         source = data.get("source")
         client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
 
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_mention = f"{TODAY_ROLE} " if date == today_str else ""
+
+
         msg = (
-            f"📩 **NOWA REZERWACJA**\n"
+            f"📩 **NOWA REZERWACJA**{today_mention}\n"
             f"{room_mention}\n"
             f"🏠 Pokój: {room_name}\n"
             f"📅 Data: {date}\n"
@@ -268,6 +273,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
