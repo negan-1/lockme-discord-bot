@@ -2,6 +2,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from datetime import timedelta
 import threading
 import requests
 from fastapi import FastAPI, Request, HTTPException
@@ -72,8 +73,16 @@ def lockme_headers():
 def post_webhook(url: str, text: str):
     if not url:
         return
-    r = requests.post(url, json={"content": text}, timeout=10)
+    r = requests.post(
+        url,
+        json={
+            "content": text,
+            "allowed_mentions": {"parse": ["roles"]}
+        },
+        timeout=10
+    )
     r.raise_for_status()
+
 
 def discord_post(text: str):
     if not DISCORD_WEBHOOK:
@@ -223,7 +232,11 @@ async def lockme_webhook(request: Request):
         room_mention = ROOM_MENTIONS.get(room_id_int, "")
 
 
-        date = (data.get("date") or "?").strip()
+        date = (data.get("date") or "").strip()
+
+        today_str = (datetime.utcnow() + timedelta(hours=1)).strftime("%Y-%m-%d")
+        today_mention = f"{TODAY_ROLE} " if date.startswith(today_str) else ""
+
         time_ = data.get("hour") or "?"
         people = data.get("people")
         price = data.get("price")
@@ -231,9 +244,7 @@ async def lockme_webhook(request: Request):
         source = data.get("source")
         client = f"{data.get('name','')} {data.get('surname','')}".strip() or "?"
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        today_mention = f"{TODAY_ROLE} " if date == today_str else ""
-
+        
 
         msg = (
             f"📩 **NOWA REZERWACJA**\n"
@@ -272,6 +283,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
