@@ -22,7 +22,7 @@ ROOM_NAMES = {
     2132: "Syreni Śpiew",
     12834: "Duchy Rosalie",
     14978: "Trupia Główka",
-    10985: "Potworne Miasteczko",
+    10985: "<@$1470541456686059674>",
     10984: "American School Story",
 }
 
@@ -190,16 +190,16 @@ async def lockme_webhook(request: Request):
         action = payload.get("action")
         data = payload.get("data", {})
 
-        t = data.get("time")
-        if t:
-            try:
-                event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
-                if event_time < START_AT:
-                    ack_message(msg_id)
-                    mark_seen(msg_id)
-                    return {"ok": True}
-            except Exception:
-                pass
+        # t = data.get("time")
+        # if t:
+        #     try:
+        #         event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+        #         if event_time < START_AT:
+        #             ack_message(msg_id)
+        #             mark_seen(msg_id)
+        #             return {"ok": True}
+        #     except Exception:
+        #         pass
 
         if action != "add":
             ack_message(msg_id)
@@ -253,6 +253,7 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
 
 
 
