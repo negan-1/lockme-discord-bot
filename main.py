@@ -84,24 +84,23 @@ def lockme_headers():
 
 def post_webhook(url: str, text: str):
     if not url:
-        return
+        raise RuntimeError("Webhook URL is empty (check Render Environment vars)")
     r = requests.post(
         url,
-        json={
-            "content": text,
-            "allowed_mentions": {"parse": ["roles"]}
-        },
+        json={"content": text, "allowed_mentions": {"parse": ["roles"]}},
         timeout=10
     )
     r.raise_for_status()
 
 
+
 def discord_alert(text: str):
-    target = DISCORD_ALERT_WEBHOOK or DISCORD_TODAY_WEBHOOK
+    target = DISCORD_ALERT_WEBHOOK or DISCORD_ALL_WEBHOOK or DISCORD_TODAY_WEBHOOK
     try:
         post_webhook(target, text)
-    except:
-        pass
+    except Exception as e:
+        print("discord_alert failed:", e)
+
 
 
 # --- AUTOMATYCZNE POWIADOMIENIA O TOKENIE ---
@@ -161,6 +160,16 @@ def health():
 @app.get("/test-discord")
 def test_discord():
     discord_post("✅ Render -> Discord działa (rezerwacje)")
+    return {"ok": True}
+
+@app.get("/test-all")
+def test_all():
+    post_webhook(DISCORD_ALL_WEBHOOK, "✅ TEST ALL webhook działa")
+    return {"ok": True}
+
+@app.get("/test-today")
+def test_today():
+    post_webhook(DISCORD_TODAY_WEBHOOK, "✅ TEST TODAY webhook działa")
     return {"ok": True}
 
 
@@ -257,6 +266,7 @@ async def lockme_webhook(request: Request):
         mark_seen(msg_id)
 
     return {"ok": True}
+
 
 
 
