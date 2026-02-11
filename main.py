@@ -136,6 +136,11 @@ def ack_message(msg_id: str):
     except:
         pass
 
+def discord_post(text: str):
+    if not DISCORD_ALL_WEBHOOK:
+        raise RuntimeError("DISCORD_WEBHOOK is missing (set it in Render Environment)")
+    post_webhook(DISCORD_ALL_WEBHOOK, text)
+
 
 # --- GŁÓWNA OBSŁUGA WEBHOOKA ---
 @app.on_event("startup")
@@ -146,6 +151,11 @@ def _startup():
 
 @app.get("/health")
 def health():
+    return {"ok": True}
+
+@app.get("/test-discord")
+def test_discord():
+    discord_post("✅ Render -> Discord działa (rezerwacje)")
     return {"ok": True}
 
 
@@ -181,6 +191,20 @@ async def lockme_webhook(request: Request):
             return {"ok": True}
 
         data = payload.get("data", {})
+#tylko aktualne
+        t = data.get("time")
+        if t:
+            try:
+                event_time = datetime.strptime(t, "%Y-%m-%d %H:%M:%S")
+                if event_time < START_AT:
+                    ack_message(msg_id)
+                    mark_seen(msg_id)
+                    return {"ok": True}
+            except Exception:
+                pass
+
+
+
         room_id = data.get("roomid") or payload.get("roomid")
         room_id_int = int(room_id) if room_id else None
 
