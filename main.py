@@ -181,6 +181,17 @@ def root():
 def health():
     return {"ok": True}
 
+@app.get("/debug-env")
+def debug_env():
+    return {
+        "LOCKME_TOKEN_set": bool(LOCKME_TOKEN),
+        "DISCORD_WEBHOOK_set": bool(DISCORD_WEBHOOK),
+        "DISCORD_TODAY_WEBHOOK_set": bool(os.getenv("DISCORD_TODAY_WEBHOOK", "")),
+        "DISCORD_ALERT_WEBHOOK_set": bool(DISCORD_ALERT_WEBHOOK),
+        "WEBHOOK_SECRET_set": bool(WEBHOOK_SECRET),
+    }
+
+
 
 @app.get("/test-discord")
 def test_discord():
@@ -304,3 +315,4 @@ async def lockme_webhook(request: Request):
             pass
 
         return {"ok": True}
+
